@@ -63,9 +63,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enhanced error logging for debugging
     console.error('Register error:', error);
+    console.error('Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    });
+
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      { 
+        success: false, 
+        error: 'Internal server error',
+        ...(process.env.NODE_ENV === 'development' && {
+          details: error instanceof Error ? error.message : 'Unknown error'
+        })
+      },
       { status: 500 }
     );
   }

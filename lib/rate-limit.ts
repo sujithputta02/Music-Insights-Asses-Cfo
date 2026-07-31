@@ -26,6 +26,11 @@ export function isRateLimited(
   identifier: string,
   config: RateLimitConfig
 ): boolean {
+  // Allow disabling rate limiting via environment variable (for testing)
+  if (process.env.DISABLE_RATE_LIMITING === 'true') {
+    return false;
+  }
+
   const now = Date.now();
   const existing = store.get(identifier);
 
@@ -79,37 +84,41 @@ export function getRateLimitIdentifier(request: Request): string {
 
 /**
  * Preset rate limit configurations
+ * More relaxed in development/testing, strict in production
  */
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const RATE_LIMITS = {
   // Authentication endpoints - prevent brute force
   AUTH_LOGIN: {
-    maxRequests: 5,
+    maxRequests: isDevelopment ? 50 : 10, // More attempts in dev for testing
     windowMs: 15 * 60 * 1000, // 15 minutes
     message: 'Too many login attempts. Please try again in 15 minutes.',
   },
   AUTH_REGISTER: {
-    maxRequests: 3,
-    windowMs: 60 * 60 * 1000, // 1 hour
+    maxRequests: isDevelopment ? 50 : 10, // Increased from 3 to 10 for better UX
+    windowMs: isDevelopment ? 5 * 60 * 1000 : 60 * 60 * 1000, // 5 min dev, 1 hour prod
     message: 'Too many registration attempts. Please try again later.',
   },
   
   // AI endpoints - protect against token exhaustion
   AI_RECOMMENDATIONS: {
-    maxRequests: 5, // Reduced from 10 to protect free tier
+    maxRequests: isDevelopment ? 20 : 5, // More in dev for testing
     windowMs: 60 * 60 * 1000, // 1 hour
-    message: 'AI recommendation limit reached (5/hour). Please try again later.',
+    message: 'AI recommendation limit reached. Please try again later.',
   },
   
   // General API endpoints
   API_GENERAL: {
-    maxRequests: 100,
+    maxRequests: isDevelopment ? 500 : 100,
     windowMs: 60 * 1000, // 1 minute
     message: 'Too many requests. Please slow down.',
   },
   
   // Library modifications
   LIBRARY_WRITE: {
-    maxRequests: 50,
+    maxRequests: isDevelopment ? 200 : 50,
     windowMs: 60 * 60 * 1000, // 1 hour
     message: 'Too many library updates. Please try again later.',
   },
