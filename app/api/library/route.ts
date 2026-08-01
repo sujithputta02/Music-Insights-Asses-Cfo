@@ -80,7 +80,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    console.log('Received body:', JSON.stringify(body, null, 2));
+    
+    // Validate input
     const validated = addAlbumSchema.parse(body);
+    console.log('Validated data:', JSON.stringify(validated, null, 2));
 
     // Check if album already exists in user's library
     const existing = await prisma.album.findUnique({
@@ -99,20 +103,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create album
+    // Prepare album data with proper null handling
+    const albumData: any = {
+      userId: user.userId,
+      appleCatalogId: validated.appleCatalogId,
+      title: validated.title,
+      artistName: validated.artistName,
+    };
+
+    // Only add optional fields if they have values
+    if (validated.genre) albumData.genre = validated.genre;
+    if (validated.releaseDate) {
+      try {
+        albumData.releaseDate = new Date(validated.releaseDate);
+      } catch (e) {
+        console.warn('Invalid release date:', validated.releaseDate);
+      }
+    }
+    if (typeof validated.trackCount === 'number') albumData.trackCount = validated.trackCount;
+    if (validated.artworkUrl && validated.artworkUrl !== '') albumData.artworkUrl = validated.artworkUrl;
+    if (typeof validated.collectionPrice === 'number') albumData.collectionPrice = validated.collectionPrice;
+    
+    console.log('Creating album with data:', JSON.stringify(albumData, null, 2));
+
     const album = await prisma.album.create({
-      data: {
-        userId: user.userId,
-        appleCatalogId: validated.appleCatalogId,
-        title: validated.title,
-        artistName: validated.artistName,
-        genre: validated.genre,
-        releaseDate: validated.releaseDate ? new Date(validated.releaseDate) : null,
-        trackCount: validated.trackCount,
-        artworkUrl: validated.artworkUrl,
-        collectionPrice: validated.collectionPrice,
-      },
+      data: albumData,
     });
+
+    console.log('Album created successfully:', album.id);
 
     return NextResponse.json(
       {
@@ -124,15 +142,25 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     if (error instanceof ZodError) {
+      console.error('Validation error:', error.errors);
       return NextResponse.json(
         { success: false, error: 'Validation failed', details: error.errors },
         { status: 400 }
       );
     }
 
+    // Enhanced error logging
     console.error('Add to library error:', error);
+    console.error('Error name:', (error as any)?.name);
+    console.error('Error message:', (error as any)?.message);
+    console.error('Error stack:', (error as any)?.stack);
+    
     return NextResponse.json(
-      { success: false, error: 'Failed to add album to library' },
+      { 
+        success: false, 
+        error: 'Failed to add album to library',
+        details: process.env.NODE_ENV === 'development' ? (error as any)?.message : undefined
+      },
       { status: 500 }
     );
   }

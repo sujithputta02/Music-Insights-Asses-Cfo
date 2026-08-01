@@ -22,11 +22,11 @@ export const addAlbumSchema = z.object({
   appleCatalogId: z.string().min(1, 'Apple Catalog ID is required'),
   title: z.string().min(1, 'Title is required'),
   artistName: z.string().min(1, 'Artist name is required'),
-  genre: z.string().optional(),
-  releaseDate: z.string().optional(),
-  trackCount: z.number().int().positive().optional(),
-  artworkUrl: z.string().url().optional(),
-  collectionPrice: z.number().positive().optional(),
+  genre: z.string().optional().nullable(),
+  releaseDate: z.string().optional().nullable(),
+  trackCount: z.number().int().positive().optional().nullable(),
+  artworkUrl: z.string().url().optional().nullable().or(z.literal('')),
+  collectionPrice: z.number().positive().optional().nullable(),
 });
 
 export const updateAlbumSchema = z.object({
