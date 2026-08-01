@@ -47,29 +47,29 @@ export default function LibraryPage() {
   const fetchLibrary = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get<{
-        data: Album[];
-        pagination: {
-          page: number;
-          limit: number;
-          total: number;
-          totalPages: number;
-          hasMore: boolean;
-        };
-      }>(`/api/library?page=${currentPage}&limit=${itemsPerPage}`);
+      const response = await apiClient.get<Album[]>(`/api/library?page=${currentPage}&limit=${itemsPerPage}`);
       
-      if (response.success && response.data && response.data.data && response.data.pagination) {
-        setAlbums(response.data.data);
-        setTotal(response.data.pagination.total);
-        setTotalPages(response.data.pagination.totalPages);
+      console.log('Library API response:', response);
+      
+      if (response.success && response.data) {
+        // API returns { success, data: [...albums], pagination: {...} }
+        // But apiClient wraps it, so we need to access it correctly
+        const libraryData = response.data as any;
+        const albums = Array.isArray(libraryData) ? libraryData : (libraryData.data || []);
+        const pagination = libraryData.pagination || { total: 0, totalPages: 1 };
+        
+        setAlbums(albums);
+        setTotal(pagination.total);
+        setTotalPages(pagination.totalPages);
         
         // Extract unique genres
         const uniqueGenres = Array.from(
-          new Set(response.data.data.map((a) => a.genre).filter(Boolean))
+          new Set(albums.map((a: Album) => a.genre).filter(Boolean))
         ).sort() as string[];
         setGenres(uniqueGenres);
       } else {
         // Handle empty or invalid response
+        console.error('Library fetch failed:', response.error);
         setAlbums([]);
         setTotal(0);
         setTotalPages(1);
