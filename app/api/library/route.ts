@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
 // POST /api/library - Add album to library
 export async function POST(request: NextRequest) {
   try {
+    // Authenticate user
     const user = authenticate(request);
     if (!user) {
       return NextResponse.json(
@@ -79,22 +80,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    // Parse request body
+    let body;
+    try {
+      body = await request.json();
+    } catch (parseError) {
+      console.error('Failed to parse request body:', parseError);
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON in request body' },
+        { status: 400 }
+      );
+    }
+
     console.log('Received body:', JSON.stringify(body, null, 2));
     
     // Validate input
-    const validated = addAlbumSchema.parse(body);
-    console.log('Validated data:', JSON.stringify(validated, null, 2));
+    let validated;
+    try {
+      validated = addAlbumSchema.parse(body);
+      console.log('Validated data:', JSON.stringify(validated, null, 2));
+    } catch (validationError) {
+      if (validationError instanceof ZodError) {
+        console.error('Validation error:', validationError.errors);
+        return NextResponse.json(
+          { success: false, error: 'Validation failed', details: validationError.errors },
+          { status: 400 }
+        );
+      }
+      throw validationError;
+    }
 
     // Check if album already exists in user's library
-    const existing = await prisma.album.findUnique({
-      where: {
-        userId_appleCatalogId: {
-          userId: user.userId,
-          appleCatalogId: validated.appleCatalogId,
+    let existing;
+    try {
+      existing = await prisma.album.findUnique({
+        where: {
+          userId_appleCatalogId: {
+            userId: user.userId,
+            appleCatalogId: validated.appleCatalogId,
+          },
         },
-      },
-    });
+      });
+    } catch (findError) {
+      console.error('Database query error:', findError);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to check existing album',
+          details: process.env.NODE_ENV === 'development' ? (findError as any)?.message : undefined
+        },
+        { status: 500 }
+      );
+    }
 
     if (existing) {
       return NextResponse.json(
@@ -126,11 +163,26 @@ export async function POST(request: NextRequest) {
     
     console.log('Creating album with data:', JSON.stringify(albumData, null, 2));
 
-    const album = await prisma.album.create({
-      data: albumData,
-    });
-
-    console.log('Album created successfully:', album.id);
+    // Create album in database
+    let album;
+    try {
+      album = await prisma.album.create({
+        data: albumData,
+      });
+      console.log('Album created successfully:', album.id);
+    } catch (createError) {
+      console.error('Database create error:', createError);
+      console.error('Error code:', (createError as any)?.code);
+      console.error('Error meta:', (createError as any)?.meta);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to create album in database',
+          details: process.env.NODE_ENV === 'development' ? (createError as any)?.message : undefined
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       {
@@ -141,16 +193,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof ZodError) {
-      console.error('Validation error:', error.errors);
-      return NextResponse.json(
-        { success: false, error: 'Validation failed', details: error.errors },
-        { status: 400 }
-      );
-    }
-
-    // Enhanced error logging
-    console.error('Add to library error:', error);
+    // Generic error handler for unexpected errors
+    console.error('Unexpected error in POST /api/library:', error);
     console.error('Error name:', (error as any)?.name);
     console.error('Error message:', (error as any)?.message);
     console.error('Error stack:', (error as any)?.stack);
@@ -158,7 +202,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Failed to add album to library',
+        error: 'An unexpected error occurred',
         details: process.env.NODE_ENV === 'development' ? (error as any)?.message : undefined
       },
       { status: 500 }
