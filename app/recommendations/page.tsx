@@ -4,28 +4,29 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { apiClient } from '@/lib/api-client';
-import { searchAlbums } from '@/lib/itunes';
 import Button from '@/components/ui/Button';
 import Card, { CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import EmptyState from '@/components/ui/EmptyState';
-import AlbumCard from '@/components/AlbumCard';
-import { Sparkle, Disc, Lightbulb } from '@phosphor-icons/react';
+import { Sparkle, Lightbulb, ArrowClockwise } from '@phosphor-icons/react';
 import Link from 'next/link';
 
-interface Recommendation {
-  artist: string;
-  album: string;
+interface AIRecommendation {
+  album: any; // iTunes album data
   reason: string;
-  searchTerm: string;
+  confidence: number;
 }
 
 interface AIInsights {
-  summary: string;
-  personality: string;
-  recommendations: Recommendation[];
-  trends: string[];
+  summary?: string;
+  dominantGenres?: string[];
+  listeningPersonality?: string;
+  recommendations: AIRecommendation[];
+  trends?: string[];
+  generatedAt?: string;
+  hasCachedRecommendations?: boolean;
+  message?: string;
 }
 
 export default function RecommendationsPage() {
@@ -34,9 +35,8 @@ export default function RecommendationsPage() {
   const [mounted, setMounted] = useState(false);
   const [insights, setInsights] = useState<AIInsights | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchingAlbum, setSearchingAlbum] = useState<string | null>(null);
-  const [foundAlbums, setFoundAlbums] = useState<Map<string, any>>(new Map());
 
   // Handle hydration
   useEffect(() => {
@@ -49,44 +49,44 @@ export default function RecommendationsPage() {
       return;
     }
     if (mounted && isAuthenticated()) {
-      fetchRecommendations();
+      loadRecommendations();
     }
   }, [mounted, isAuthenticated, router]);
 
-  const fetchRecommendations = async () => {
+  // Load cached recommendations (doesn't count against rate limit)
+  const loadRecommendations = async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await apiClient.get<AIInsights>('/api/recommendations');
       if (response.success && response.data) {
         setInsights(response.data);
-        // Automatically search for recommended albums
-        searchForRecommendedAlbums(response.data.recommendations);
       } else {
-        setError(response.error || 'Failed to get recommendations');
+        setError(response.error || 'Failed to load recommendations');
       }
     } catch (err) {
-      setError('An error occurred while generating recommendations');
+      setError('An error occurred while loading recommendations');
     } finally {
       setLoading(false);
     }
   };
 
-  const searchForRecommendedAlbums = async (recommendations: Recommendation[]) => {
-    const results = new Map();
-    
-    for (const rec of recommendations) {
-      try {
-        const searchResult = await searchAlbums({ query: rec.searchTerm, limit: 1 });
-        if (searchResult.results.length > 0) {
-          results.set(rec.searchTerm, searchResult.results[0]);
-        }
-      } catch (error) {
-        console.error(`Failed to search for ${rec.searchTerm}:`, error);
+  // Generate new recommendations (counts against rate limit)
+  const generateNewRecommendations = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<AIInsights>('/api/recommendations', {});
+      if (response.success && response.data) {
+        setInsights(response.data);
+      } else {
+        setError(response.error || 'Failed to generate recommendations');
       }
+    } catch (err) {
+      setError('An error occurred while generating recommendations');
+    } finally {
+      setGenerating(false);
     }
-    
-    setFoundAlbums(results);
   };
 
   const handleAddToLibrary = async (album: any) => {
@@ -106,6 +106,19 @@ export default function RecommendationsPage() {
     }
   };
 
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const hours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+    
+    if (hours < 1) return 'just now';
+    if (hours === 1) return '1 hour ago';
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return '1 day ago';
+    return `${days} days ago`;
+  };
+
   if (!mounted || !isAuthenticated()) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -118,7 +131,7 @@ export default function RecommendationsPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Sparkle size={48} weight="duotone" className="text-text-primary mb-4 animate-pulse" />
-        <p className="text-text-muted">Analyzing your music taste...</p>
+        <p className="text-text-muted">Loading recommendations...</p>
       </div>
     );
   }
@@ -128,7 +141,7 @@ export default function RecommendationsPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <EmptyState
           icon={<Sparkle size={64} weight="light" />}
-          title="Unable to Generate Recommendations"
+          title="Unable to Load Recommendations"
           description={error}
           action={
             error.includes('No albums') ? (
@@ -136,7 +149,7 @@ export default function RecommendationsPage() {
                 <Button variant="primary">Add Albums to Library</Button>
               </Link>
             ) : (
-              <Button variant="primary" onClick={fetchRecommendations}>
+              <Button variant="primary" onClick={loadRecommendations}>
                 Try Again
               </Button>
             )
@@ -146,61 +159,117 @@ export default function RecommendationsPage() {
     );
   }
 
-  if (!insights) {
-    return null;
+  // No recommendations yet
+  if (!insights || insights.recommendations.length === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <EmptyState
+          icon={<Sparkle size={64} weight="light" />}
+          title="No Recommendations Yet"
+          description={insights?.message || "Click the button below to generate AI-powered album recommendations based on your library."}
+          action={
+            <Button 
+              variant="primary" 
+              onClick={generateNewRecommendations}
+              disabled={generating}
+            >
+              {generating ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkle size={18} weight="bold" />
+                  Generate Recommendations
+                </>
+              )}
+            </Button>
+          }
+        />
+      </div>
+    );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Header */}
-      <div className="mb-12 animate-slide-up">
-        <h1 className="text-5xl font-serif text-text-primary mb-4">
-          AI Recommendations
-        </h1>
-        <p className="text-text-muted text-lg">
-          Personalized insights powered by artificial intelligence
-        </p>
+      <div className="mb-8 animate-slide-up flex justify-between items-start">
+        <div>
+          <h1 className="text-5xl font-serif text-text-primary mb-4">
+            AI Recommendations
+          </h1>
+          <p className="text-text-muted text-lg">
+            Personalized insights powered by artificial intelligence
+          </p>
+          {insights.generatedAt && (
+            <p className="text-sm text-text-muted mt-2">
+              Generated {formatTimeAgo(insights.generatedAt)}
+            </p>
+          )}
+        </div>
+        <Button 
+          variant="secondary" 
+          onClick={generateNewRecommendations}
+          disabled={generating}
+        >
+          {generating ? (
+            <>
+              <LoadingSpinner size="sm" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <ArrowClockwise size={18} weight="bold" />
+              Refresh
+            </>
+          )}
+        </Button>
       </div>
 
-      {/* Personality Card */}
-      <Card className="mb-8 animate-slide-up" style={{ animationDelay: '100ms' }}>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-accent-yellow-bg rounded-lg">
-              <Sparkle size={32} weight="duotone" className="text-accent-yellow-text" />
+      {/* Personality Card (only if available from full insights) */}
+      {insights.listeningPersonality && (
+        <Card className="mb-8 animate-slide-up" style={{ animationDelay: '100ms' }}>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-accent-yellow-bg rounded-lg">
+                <Sparkle size={32} weight="duotone" className="text-accent-yellow-text" />
+              </div>
+              <div>
+                <CardTitle>Your Music Personality</CardTitle>
+                <Badge variant="yellow" className="mt-2">
+                  {insights.listeningPersonality}
+                </Badge>
+              </div>
             </div>
-            <div>
-              <CardTitle>Your Music Personality</CardTitle>
-              <Badge variant="yellow" className="mt-2">
-                {insights.personality}
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-text-secondary leading-relaxed">{insights.summary}</p>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            <p className="text-text-secondary leading-relaxed">{insights.summary}</p>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Trends */}
-      <Card className="mb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Lightbulb size={24} weight="duotone" className="text-text-primary" />
-            <CardTitle>Insights About Your Collection</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-3">
-            {insights.trends.map((trend, index) => (
-              <li key={index} className="flex items-start gap-3">
-                <span className="text-accent-blue-text font-mono text-sm mt-1">•</span>
-                <span className="text-text-secondary leading-relaxed">{trend}</span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      {/* Trends (only if available from full insights) */}
+      {insights.trends && insights.trends.length > 0 && (
+        <Card className="mb-8 animate-slide-up" style={{ animationDelay: '150ms' }}>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Lightbulb size={24} weight="duotone" className="text-text-primary" />
+              <CardTitle>Insights About Your Collection</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {insights.trends.map((trend, index) => (
+                <li key={index} className="flex items-start gap-3">
+                  <span className="text-accent-blue-text font-mono text-sm mt-1">•</span>
+                  <span className="text-text-secondary leading-relaxed">{trend}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recommendations */}
       <div className="mb-6 animate-slide-up" style={{ animationDelay: '200ms' }}>
@@ -214,7 +283,7 @@ export default function RecommendationsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {insights.recommendations.map((rec, index) => {
-          const album = foundAlbums.get(rec.searchTerm);
+          const album = rec.album;
           
           return (
             <Card
@@ -223,29 +292,26 @@ export default function RecommendationsPage() {
               style={{ animationDelay: `${250 + index * 50}ms` }}
             >
               <div className="flex gap-4">
-                {/* Album artwork if found */}
-                {album && (
-                  <div className="w-24 h-24 flex-shrink-0 bg-canvas-warm rounded-md overflow-hidden">
-                    {album.artworkUrl100 && (
-                      <img
-                        src={album.artworkUrl100}
-                        alt={rec.album}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                  </div>
-                )}
+                {/* Album artwork */}
+                <div className="w-24 h-24 flex-shrink-0 bg-canvas-warm rounded-md overflow-hidden">
+                  {album.artworkUrl100 && (
+                    <img
+                      src={album.artworkUrl100}
+                      alt={album.collectionName}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </div>
 
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-text-primary mb-1 line-clamp-2">
-                    {rec.album}
+                    {album.collectionName}
                   </h3>
-                  <p className="text-sm text-text-muted mb-2">{rec.artist}</p>
+                  <p className="text-sm text-text-muted mb-2">{album.artistName}</p>
                   <p className="text-sm text-text-secondary leading-relaxed mb-3">
                     {rec.reason}
                   </p>
-                  
-                  {album && (
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
@@ -253,20 +319,15 @@ export default function RecommendationsPage() {
                     >
                       Add to Library
                     </Button>
-                  )}
+                    <Badge variant="blue" className="text-xs">
+                      {Math.round(rec.confidence * 100)}% match
+                    </Badge>
+                  </div>
                 </div>
               </div>
             </Card>
           );
         })}
-      </div>
-
-      {/* Refresh Button */}
-      <div className="mt-12 text-center">
-        <Button variant="secondary" onClick={fetchRecommendations}>
-          <Sparkle size={18} weight="bold" />
-          Generate New Recommendations
-        </Button>
       </div>
     </div>
   );

@@ -9,13 +9,14 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  albums    Album[]
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  name            String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  albums          Album[]
+  recommendations Recommendation[]
 
   @@index([email])
   @@map("users")
@@ -44,4 +45,22 @@ model Album {
   @@index([artistName])
   @@index([releaseDate])
   @@map("albums")
+}
+
+model Recommendation {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appleCatalogId String   // iTunes collection ID
+  albumData      Json     // Full iTunes album data
+  reason         String   // AI-generated reason
+  confidence     Float    // AI confidence score (0-1)
+  status         String   @default("active") // active, dismissed, added_to_library
+  generatedAt    DateTime @default(now())
+  expiresAt      DateTime? // Optional expiry date
+
+  @@index([userId])
+  @@index([status])
+  @@index([generatedAt])
+  @@map("recommendations")
 }

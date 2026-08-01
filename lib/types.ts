@@ -103,10 +103,24 @@ export interface AIRecommendation {
   confidence: number;
 }
 
+export interface SavedRecommendation {
+  id: string;
+  userId: string;
+  appleCatalogId: string;
+  albumData: ITunesAlbum;
+  reason: string;
+  confidence: number;
+  status: 'active' | 'dismissed' | 'added_to_library';
+  generatedAt: Date;
+  expiresAt: Date | null;
+}
+
 export interface AIInsights {
   summary: string;
   dominantGenres: string[];
   listeningPersonality: string;
   recommendations: AIRecommendation[];
   trends: string[];
+  generatedAt?: Date;
+  hasCachedRecommendations?: boolean;
 }
