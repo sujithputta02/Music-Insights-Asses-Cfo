@@ -58,7 +58,7 @@ export default function LibraryPage() {
         };
       }>(`/api/library?page=${currentPage}&limit=${itemsPerPage}`);
       
-      if (response.success && response.data) {
+      if (response.success && response.data && response.data.data && response.data.pagination) {
         setAlbums(response.data.data);
         setTotal(response.data.pagination.total);
         setTotalPages(response.data.pagination.totalPages);
@@ -68,9 +68,20 @@ export default function LibraryPage() {
           new Set(response.data.data.map((a) => a.genre).filter(Boolean))
         ).sort() as string[];
         setGenres(uniqueGenres);
+      } else {
+        // Handle empty or invalid response
+        setAlbums([]);
+        setTotal(0);
+        setTotalPages(1);
+        setGenres([]);
       }
     } catch (error) {
       console.error('Failed to fetch library:', error);
+      // Reset state on error
+      setAlbums([]);
+      setTotal(0);
+      setTotalPages(1);
+      setGenres([]);
     } finally {
       setLoading(false);
     }
@@ -132,6 +143,10 @@ export default function LibraryPage() {
       setAlbums((prev) => prev.filter((album) => album.id !== id));
     }
   };
+
+  if (!mounted) {
+    return null;
+  }
 
   if (!isAuthenticated()) {
     return null;
