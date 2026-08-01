@@ -29,13 +29,15 @@ export async function GET(request: NextRequest) {
     });
 
     if (albums.length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'No albums in library. Add some albums to get recommendations.',
+      // Return success with empty recommendations and helpful message
+      return NextResponse.json({
+        success: true,
+        data: {
+          recommendations: [],
+          hasCachedRecommendations: false,
+          message: 'No albums in library. Add some albums to get recommendations.',
         },
-        { status: 400 }
-      );
+      });
     }
 
     // Check for cached recommendations (less than 24 hours old)

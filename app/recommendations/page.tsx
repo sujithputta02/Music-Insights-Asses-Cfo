@@ -161,30 +161,41 @@ export default function RecommendationsPage() {
 
   // No recommendations yet
   if (!insights || insights.recommendations.length === 0) {
+    const message = insights?.message || "Add albums to your library to get AI-powered recommendations.";
+    const hasNoAlbums = message.includes('No albums in library');
+    
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <EmptyState
           icon={<Sparkle size={64} weight="light" />}
-          title="No Recommendations Yet"
-          description={insights?.message || "Click the button below to generate AI-powered album recommendations based on your library."}
+          title={hasNoAlbums ? "Build Your Library First" : "No Recommendations Yet"}
+          description={message}
           action={
-            <Button 
-              variant="primary" 
-              onClick={generateNewRecommendations}
-              disabled={generating}
-            >
-              {generating ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkle size={18} weight="bold" />
-                  Generate Recommendations
-                </>
-              )}
-            </Button>
+            hasNoAlbums ? (
+              <Link href="/search">
+                <Button variant="primary">
+                  Search Albums
+                </Button>
+              </Link>
+            ) : (
+              <Button 
+                variant="primary" 
+                onClick={generateNewRecommendations}
+                disabled={generating}
+              >
+                {generating ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkle size={18} weight="bold" />
+                    Generate Recommendations
+                  </>
+                )}
+              </Button>
+            )
           }
         />
       </div>
