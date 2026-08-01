@@ -56,11 +56,11 @@ export default function LibraryPage() {
         // But apiClient wraps it, so we need to access it correctly
         const libraryData = response.data as any;
         const albums = Array.isArray(libraryData) ? libraryData : (libraryData.data || []);
-        const pagination = libraryData.pagination || { total: 0, totalPages: 1 };
+        const pagination = libraryData.pagination || { total: albums.length, totalPages: 1 };
         
         setAlbums(albums);
-        setTotal(pagination.total);
-        setTotalPages(pagination.totalPages);
+        setTotal(pagination.total || albums.length);
+        setTotalPages(pagination.totalPages || 1);
         
         // Extract unique genres
         const uniqueGenres = Array.from(
