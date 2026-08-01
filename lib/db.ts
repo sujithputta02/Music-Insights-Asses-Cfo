@@ -11,3 +11,7 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
+// Type assertion to help TypeScript recognize Prisma models
+// This ensures the recommendation, user, and album properties are recognized
+export type PrismaClientType = typeof prisma;

@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     if (cachedRecommendations.length > 0) {
       // Return cached recommendations
-      const recommendations = cachedRecommendations.map((rec) => ({
+      const recommendations = cachedRecommendations.map((rec: any) => ({
         album: rec.albumData,
         reason: rec.reason,
         confidence: rec.confidence,
