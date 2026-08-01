@@ -142,6 +142,64 @@ export async function POST(request: NextRequest) {
     // Generate AI insights
     const insights = await generateMusicInsights(albums);
 
+    // Search iTunes for each recommendation to get full album data
+    const recommendationsWithData = await Promise.all(
+      insights.recommendations.map(async (rec: any) => {
+        try {
+          // Search iTunes using the search term provided by AI
+          const searchTerm = rec.searchTerm || `${rec.artist} ${rec.album}`;
+          const iTunesResponse = await fetch(
+            `https://itunes.apple.com/search?term=${encodeURIComponent(
+              searchTerm
+            )}&entity=album&limit=1`
+          );
+          
+          if (!iTunesResponse.ok) {
+            console.warn(`iTunes search failed for: ${searchTerm}`);
+            return null;
+          }
+
+          const iTunesData = await iTunesResponse.json();
+          
+          if (iTunesData.results && iTunesData.results.length > 0) {
+            const album = iTunesData.results[0];
+            return {
+              album: {
+                collectionId: album.collectionId,
+                collectionName: album.collectionName,
+                artistName: album.artistName,
+                artworkUrl100: album.artworkUrl100,
+                collectionPrice: album.collectionPrice,
+                releaseDate: album.releaseDate,
+                primaryGenreName: album.primaryGenreName,
+                trackCount: album.trackCount,
+              },
+              reason: rec.reason,
+              confidence: 0.85, // Default confidence since AI doesn't provide it
+            };
+          }
+          
+          return null;
+        } catch (error) {
+          console.error(`Error fetching album data for ${rec.artist} - ${rec.album}:`, error);
+          return null;
+        }
+      })
+    );
+
+    // Filter out failed searches
+    const validRecommendations = recommendationsWithData.filter((rec) => rec !== null);
+
+    if (validRecommendations.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Could not find any recommended albums on iTunes. Please try again.',
+        },
+        { status: 500 }
+      );
+    }
+
     // Delete old recommendations for this user
     await prisma.recommendation.deleteMany({
       where: { userId: user.userId },
@@ -149,7 +207,7 @@ export async function POST(request: NextRequest) {
 
     // Save new recommendations to database
     const savedRecommendations = await Promise.all(
-      insights.recommendations.map((rec: any) =>
+      validRecommendations.map((rec: any) =>
         prisma.recommendation.create({
           data: {
             userId: user.userId,
@@ -167,7 +225,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        ...insights,
+        personality: insights.personality,
+        summary: insights.summary,
+        trends: insights.trends,
+        recommendations: validRecommendations,
         generatedAt: new Date(),
         hasCachedRecommendations: true,
         savedCount: savedRecommendations.length,
